@@ -14,6 +14,7 @@ ignore = ["E501", "B904", "B008"]  # line-length는 black이 이미 강제하므
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.coverage.run]
 source = ["settlement"]
