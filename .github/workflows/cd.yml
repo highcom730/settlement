@@ -1,0 +1,49 @@
+name: "CD Pipeline"
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy-to-k8s:
+    runs-on: ["self-hosted", "linux", "X64"]
+
+    steps:
+      - name: "Checkout Code"
+        uses: "actions/checkout@v4"
+
+      # [단계 추가] 도커 이미지 빌드
+      # 고유한 run_number를 사용하여 settlement:1, settlement:2 구조로 자동 빌드합니다.
+      - name: "Build Docker Image with Dynamic Tag"
+        run: |
+          docker build -t settlement:${{ github.run_number }} .
+
+      - name: "Set Kubernetes Context to Kind"
+        run: |
+          kubectl config use-context kind-settlement-local
+
+      # 변경된 이미지 명(태그)을 자동으로 인지하여 Kind 클러스터 내부로 로드합니다.
+      - name: "Load Auto-Named Docker Image into Kind Cluster"
+        run: |
+          kind load docker-image settlement:${{ github.run_number }} --name settlement-local
+
+      - name: "Create and Verify Namespace"
+        run: |
+          kubectl create namespace settlement --dry-run=client -o yaml | kubectl apply -f -
+          kubectl get namespace
+
+      - name: "Apply K8s Manifests"
+        run: |
+          kubectl apply -n settlement -f k8s/deployment.yaml
+          kubectl apply -n settlement -f k8s/service.yaml
+          kubectl get deployment -n settlement
+          kubectl get svc -n settlement
+
+      # 🚀 [핵심 자동화] 자동으로 변경된 새 이미지 명(태그)을 쿠버네티스 디플로이먼트에 동적 주입합니다.
+      - name: "Trigger Kubernetes Deployment Update with New Image Tag"
+        run: |
+          kubectl set image deployment/settlement settlement=settlement:${{ github.run_number }} -n settlement
+
+      - name: "Monitor Deployment Rollout Status"
+        run: |
+          kubectl rollout status deployment/settlement -n settlement
